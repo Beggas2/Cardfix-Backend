@@ -12,6 +12,7 @@ Este repositório contém o código-fonte do backend do aplicativo de concursos,
 - JWT para autenticação
 - Multer para upload de arquivos
 - OpenAI API para geração de cards (opcional)
+- -
 
 ### Estrutura de Pastas
 
