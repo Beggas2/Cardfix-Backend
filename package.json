@@ -4,13 +4,13 @@
   "description": "Backend para aplicativo de concursos com geração de cards por IA",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && npm run postinstall",
+    "build": "tsc",
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
-    "postinstall": "prisma generate && prisma migrate deploy",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio",
+    "postinstall": "node node_modules/prisma/build/index.js generate && node node_modules/prisma/build/index.js migrate deploy",
+    "prisma:generate": "node node_modules/prisma/build/index.js generate",
+    "prisma:migrate": "node node_modules/prisma/build/index.js migrate dev",
+    "prisma:studio": "node node_modules/prisma/build/index.js studio",
     "test": "node node_modules/jest/bin/jest.js",
     "test:watch": "node node_modules/jest/bin/jest.js --watch",
     "test:coverage": "node node_modules/jest/bin/jest.js --coverage"
