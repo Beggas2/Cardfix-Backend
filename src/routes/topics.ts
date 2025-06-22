@@ -11,17 +11,15 @@ import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// All routes require authentication
-router.use(authenticateToken);
-
-// Topic CRUD
-router.post('/', createTopic);
+// Public routes
 router.get('/', getTopics);
 router.get('/:id', getTopic);
+
+// Routes requiring authentication
+router.use(authenticateToken);
+router.post('/', createTopic);
 router.put('/:id', updateTopic);
 router.delete('/:id', deleteTopic);
-
-// Topic statistics
 router.get('/:id/stats', getTopicStats);
 
 export default router;
