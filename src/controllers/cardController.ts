@@ -3,7 +3,7 @@ import { prisma } from '../utils/prisma';
 import { createSuccessResponse, createErrorResponse } from '../utils/response';
 import { CreateCardRequest, GenerateCardsRequest } from '../types';
 import { AuthenticatedRequest } from '../middleware/auth';
-import { generateCardsWithRetry } from '../services/aiService';
+import { advancedAIService } from '../services/advancedAIService';
 
 export const createCard = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -261,40 +261,66 @@ export const generateCards = async (req: AuthenticatedRequest, res: Response) =>
       );
     }
 
-    // Generate cards using AI
-    const generatedCards = await generateCardsWithRetry({
+    // Extract institution and contest type from contest name
+    const contestType = contest.selectedOffice || '';
+    const institution = contest.name.split(' ')[0] || '';
+
+    // Generate cards using advanced AI service
+    const result = await advancedAIService.generateIntelligentCards({
+      subtopicId,
+      userId,
+      userTier: req.user!.subscriptionTier,
       subtopicName: subtopic.name,
       topicName: subtopic.topic.name,
       contestName: contest.name,
       selectedOffice: contest.selectedOffice,
+      examDate: contest.examDate,
+      contestType,
+      institution,
       count,
     });
 
+    if (result.isReused) {
+      return res.json(
+        createSuccessResponse(
+          { cards: result.cards, count: result.cards.length, isReused: true },
+          result.message
+        )
+      );
+    }
+
     // Save generated cards to database
     const savedCards = [];
-    for (const generatedCard of generatedCards) {
-      const card = await prisma.card.create({
-        data: {
-          subtopicId,
-          front: generatedCard.front,
-          back: generatedCard.back,
-          createdBy: userId,
-        },
-        include: {
-          subtopic: {
-            include: {
-              topic: true,
+    for (const generatedCard of result.cards) {
+      if (!generatedCard.isReused) {
+        const card = await prisma.card.create({
+          data: {
+            subtopicId,
+            front: generatedCard.front,
+            back: generatedCard.back,
+            createdBy: userId,
+          },
+          include: {
+            subtopic: {
+              include: {
+                topic: true,
+              },
             },
           },
-        },
-      });
-      savedCards.push(card);
+        });
+        savedCards.push(card);
+      }
     }
 
     res.status(201).json(
       createSuccessResponse(
-        { cards: savedCards, count: savedCards.length },
-        `${savedCards.length} cards gerados com sucesso`
+        { 
+          cards: savedCards, 
+          count: savedCards.length,
+          isReused: false,
+          priorityData: result.priorityData
+        },
+        result.message
       )
     );
   } catch (error) {
@@ -316,6 +342,39 @@ export const generateCards = async (req: AuthenticatedRequest, res: Response) =>
 
     res.status(500).json(
       createErrorResponse('Erro ao gerar cards com IA')
+    );
+  }
+};
+
+export const bulkDeleteCards = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { cardIds } = req.body;
+
+    if (!cardIds || !Array.isArray(cardIds) || cardIds.length === 0) {
+      return res.status(400).json(
+        createErrorResponse('Lista de IDs de cards é obrigatória')
+      );
+    }
+
+    // Delete cards that belong to the user
+    const result = await prisma.card.deleteMany({
+      where: {
+        id: { in: cardIds },
+        createdBy: userId,
+      },
+    });
+
+    res.json(
+      createSuccessResponse(
+        { deletedCount: result.count },
+        `${result.count} cards deletados com sucesso`
+      )
+    );
+  } catch (error) {
+    console.error('Bulk delete cards error:', error);
+    res.status(500).json(
+      createErrorResponse('Erro interno do servidor')
     );
   }
 };

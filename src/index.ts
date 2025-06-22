@@ -12,6 +12,7 @@ import editalRoutes from './routes/editais';
 import cardRoutes from './routes/cards';
 import studyRoutes from './routes/study';
 import topicRoutes from './routes/topics';
+import performanceRoutes from './routes/performance';
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/error';
@@ -58,6 +59,7 @@ app.use('/api/contests', contestRoutes);
 app.use('/api/editais', editalRoutes);
 app.use('/api/cards', cardRoutes);
 app.use('/api/study', studyRoutes);
+app.use('/api/performance', performanceRoutes);
 app.use('/api', topicRoutes); // topics and subtopics
 
 // Welcome endpoint

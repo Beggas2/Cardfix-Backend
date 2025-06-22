@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { createSuccessResponse, createErrorResponse } from '../utils/response';
 import { AuthenticatedRequest } from '../middleware/auth';
+import { PDFProcessingService } from '../services/pdfProcessingService';
 import fs from 'fs';
 import path from 'path';
 
@@ -91,116 +92,147 @@ export const processEdital = async (req: AuthenticatedRequest, res: Response) =>
       },
     });
 
-    // Simulate edital processing (in a real implementation, this would parse the PDF)
-    // For now, we'll create some sample topics and subtopics
-    const sampleTopics = [
-      {
-        name: 'Direito Constitucional',
-        subtopics: [
-          'Princípios Fundamentais',
-          'Direitos e Garantias Fundamentais',
-          'Organização do Estado',
-          'Organização dos Poderes',
-        ],
-      },
-      {
-        name: 'Direito Administrativo',
-        subtopics: [
-          'Princípios da Administração Pública',
-          'Atos Administrativos',
-          'Processo Administrativo',
-          'Licitações e Contratos',
-        ],
-      },
-      {
-        name: 'Português',
-        subtopics: [
-          'Interpretação de Textos',
-          'Gramática',
-          'Ortografia',
-          'Redação Oficial',
-        ],
-      },
-    ];
+    try {
+      // Get file path
+      const uploadDir = process.env.UPLOAD_DIR || 'uploads';
+      const filePath = path.join(uploadDir, contest.editalFileId);
 
-    const parsedData = {
-      topics: sampleTopics,
-      processedAt: new Date().toISOString(),
-      totalTopics: sampleTopics.length,
-      totalSubtopics: sampleTopics.reduce((acc, topic) => acc + topic.subtopics.length, 0),
-    };
+      if (!fs.existsSync(filePath)) {
+        throw new Error('Arquivo do edital não encontrado');
+      }
 
-    // Create topics and subtopics
-    for (const topicData of sampleTopics) {
-      // Create or get topic
-      const topic = await prisma.topic.upsert({
-        where: { name: topicData.name },
-        update: {},
-        create: {
-          name: topicData.name,
-          description: `Tópico de ${topicData.name}`,
-        },
-      });
+      // Extract text from PDF
+      const pdfData = await PDFProcessingService.extractTextFromPDF(filePath);
+      
+      // Process with AI
+      const processedData = await PDFProcessingService.processEditalWithAI(
+        pdfData.text,
+        {
+          institution: contest.institution || undefined,
+          position: contest.position || undefined,
+          examDate: contest.examDate?.toISOString() || undefined,
+        }
+      );
 
-      // Add topic to contest
-      await prisma.contestTopic.upsert({
-        where: {
-          contestId_topicId: {
-            contestId,
-            topicId: topic.id,
+      // Create topics and subtopics in database
+      for (const topicData of processedData.topics) {
+        // Create or get topic
+        const topic = await prisma.topic.upsert({
+          where: { name: topicData.name },
+          update: {
+            description: topicData.description,
           },
-        },
-        update: {},
-        create: {
-          contestId,
-          topicId: topic.id,
-          userId,
-        },
-      });
-
-      // Create subtopics
-      for (const subtopicName of topicData.subtopics) {
-        await prisma.subtopic.upsert({
-          where: {
-            topicId_name: {
-              topicId: topic.id,
-              name: subtopicName,
-            },
-          },
-          update: {},
           create: {
-            topicId: topic.id,
-            name: subtopicName,
-            description: `Subtópico de ${subtopicName}`,
+            name: topicData.name,
+            description: topicData.description,
           },
         });
-      }
-    }
 
-    // Update contest with processed data
-    const updatedContest = await prisma.contest.update({
-      where: { id: contestId },
-      data: {
-        parsedEditalData: JSON.stringify(parsedData),
-        isProcessing: false,
-        processingError: null,
-      },
-      include: {
-        contestTopics: {
-          include: {
-            topic: {
-              include: {
-                subtopics: true,
+        // Add topic to contest
+        await prisma.contestTopic.upsert({
+          where: {
+            contestId_topicId: {
+              contestId,
+              topicId: topic.id,
+            },
+          },
+          update: {
+            priority: topicData.priority,
+          },
+          create: {
+            contestId,
+            topicId: topic.id,
+            userId,
+            priority: topicData.priority,
+          },
+        });
+
+        // Create subtopics
+        for (const subtopicData of topicData.subtopics) {
+          await prisma.subtopic.upsert({
+            where: {
+              topicId_name: {
+                topicId: topic.id,
+                name: subtopicData.name,
+              },
+            },
+            update: {
+              description: subtopicData.description,
+              priority: subtopicData.priority,
+              estimatedCards: subtopicData.estimatedCards,
+            },
+            create: {
+              topicId: topic.id,
+              name: subtopicData.name,
+              description: subtopicData.description,
+              priority: subtopicData.priority,
+              estimatedCards: subtopicData.estimatedCards,
+            },
+          });
+        }
+      }
+
+      // Update contest with processed data
+      const updatedContest = await prisma.contest.update({
+        where: { id: contestId },
+        data: {
+          parsedEditalData: JSON.stringify(processedData),
+          isProcessing: false,
+          processingError: null,
+          // Update contest info if extracted from PDF
+          institution: processedData.contestInfo.institution || contest.institution,
+          position: processedData.contestInfo.position || contest.position,
+          examDate: processedData.contestInfo.examDate 
+            ? new Date(processedData.contestInfo.examDate) 
+            : contest.examDate,
+        },
+        include: {
+          contestTopics: {
+            include: {
+              topic: {
+                include: {
+                  subtopics: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    res.json(
-      createSuccessResponse(updatedContest, 'Edital processado com sucesso')
-    );
+      res.json(
+        createSuccessResponse(
+          {
+            contest: updatedContest,
+            processedData,
+            extractedText: pdfData.text.substring(0, 500) + '...', // Preview
+          },
+          'Edital processado com sucesso pela IA'
+        )
+      );
+
+    } catch (processingError) {
+      console.error('Processing error:', processingError);
+      
+      // Update contest with error
+      await prisma.contest.update({
+        where: { id: contestId },
+        data: {
+          isProcessing: false,
+          processingError: processingError instanceof Error 
+            ? processingError.message 
+            : 'Erro desconhecido ao processar edital',
+        },
+      });
+
+      res.status(500).json(
+        createErrorResponse(
+          processingError instanceof Error 
+            ? processingError.message 
+            : 'Erro ao processar edital'
+        )
+      );
+    }
+
   } catch (error) {
     console.error('Process edital error:', error);
     
@@ -209,12 +241,12 @@ export const processEdital = async (req: AuthenticatedRequest, res: Response) =>
       where: { id: req.params.contestId },
       data: {
         isProcessing: false,
-        processingError: 'Erro ao processar edital',
+        processingError: 'Erro interno do servidor',
       },
     });
 
     res.status(500).json(
-      createErrorResponse('Erro ao processar edital')
+      createErrorResponse('Erro interno do servidor')
     );
   }
 };
@@ -307,6 +339,48 @@ export const deleteEdital = async (req: AuthenticatedRequest, res: Response) => 
     );
   } catch (error) {
     console.error('Delete edital error:', error);
+    res.status(500).json(
+      createErrorResponse('Erro interno do servidor')
+    );
+  }
+};
+
+export const getProcessingStatus = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const { contestId } = req.params;
+
+    // Check if contest exists and belongs to user
+    const contest = await prisma.contest.findFirst({
+      where: { id: contestId, userId },
+      select: {
+        id: true,
+        isProcessing: true,
+        processingError: true,
+        editalFileId: true,
+        parsedEditalData: true,
+      },
+    });
+
+    if (!contest) {
+      return res.status(404).json(
+        createErrorResponse('Concurso não encontrado')
+      );
+    }
+
+    const status = {
+      hasEdital: !!contest.editalFileId,
+      isProcessing: contest.isProcessing,
+      processingError: contest.processingError,
+      isProcessed: !!contest.parsedEditalData,
+      processedData: contest.parsedEditalData 
+        ? JSON.parse(contest.parsedEditalData) 
+        : null,
+    };
+
+    res.json(createSuccessResponse(status, 'Status obtido com sucesso'));
+  } catch (error) {
+    console.error('Get processing status error:', error);
     res.status(500).json(
       createErrorResponse('Erro interno do servidor')
     );
