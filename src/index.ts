@@ -28,10 +28,7 @@ const PORT = parseInt(process.env.PORT || '3001');
 app.use(helmet());
 
 // CORS configuration
-app.use(cors({
-  origin: ['http://localhost:5173', 'https://cardfix-frontend.vercel.app'],
-  credentials: true,
-}));
+app.use(cors());
 
 // Logging middleware
 app.use(morgan('combined'));
