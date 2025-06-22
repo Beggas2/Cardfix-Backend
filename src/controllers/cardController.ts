@@ -3,12 +3,12 @@ import { prisma } from '../utils/prisma';
 import { createSuccessResponse, createErrorResponse } from '../utils/response';
 import { CreateCardRequest, GenerateCardsRequest } from '../types';
 import { AuthenticatedRequest } from '../middleware/auth';
-import { advancedAIService } from '../services/advancedAIService';
+import { generateCardsWithRetry } from '../services/aiService';
 
 export const createCard = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { subtopicId, front, back }: CreateCardRequest = req.body;
+    const { subtopicId, front, back, difficulty = 'medium' }: CreateCardRequest = req.body;
 
     // Validate input
     if (!subtopicId || !front || !back) {
@@ -34,6 +34,7 @@ export const createCard = async (req: AuthenticatedRequest, res: Response) => {
         subtopicId,
         front,
         back,
+        difficulty,
         createdBy: userId,
       },
       include: {
@@ -58,11 +59,26 @@ export const createCard = async (req: AuthenticatedRequest, res: Response) => {
 
 export const getCards = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { subtopicId } = req.query;
+    const { subtopicId, topicId, contestId } = req.query;
 
     const whereClause: any = {};
+    
     if (subtopicId) {
       whereClause.subtopicId = subtopicId as string;
+    } else if (topicId) {
+      whereClause.subtopic = {
+        topicId: topicId as string,
+      };
+    } else if (contestId) {
+      whereClause.subtopic = {
+        topic: {
+          contestTopics: {
+            some: {
+              contestId: contestId as string,
+            },
+          },
+        },
+      };
     }
 
     const cards = await prisma.card.findMany({
@@ -138,7 +154,7 @@ export const updateCard = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
     const { id } = req.params;
-    const { front, back } = req.body;
+    const { front, back, difficulty } = req.body;
 
     // Check if card exists and belongs to user
     const existingCard = await prisma.card.findFirst({
@@ -154,7 +170,7 @@ export const updateCard = async (req: AuthenticatedRequest, res: Response) => {
     // Update card
     const card = await prisma.card.update({
       where: { id },
-      data: { front, back },
+      data: { front, back, difficulty },
       include: {
         subtopic: {
           include: {
@@ -261,66 +277,41 @@ export const generateCards = async (req: AuthenticatedRequest, res: Response) =>
       );
     }
 
-    // Extract institution and contest type from contest name
-    const contestType = contest.selectedOffice || '';
-    const institution = contest.name.split(' ')[0] || '';
-
-    // Generate cards using advanced AI service
-    const result = await advancedAIService.generateIntelligentCards({
-      subtopicId,
-      userId,
-      userTier: req.user!.subscriptionTier,
+    // Generate cards using AI
+    const generatedCards = await generateCardsWithRetry({
       subtopicName: subtopic.name,
       topicName: subtopic.topic.name,
       contestName: contest.name,
       selectedOffice: contest.selectedOffice,
-      examDate: contest.examDate,
-      contestType,
-      institution,
       count,
     });
 
-    if (result.isReused) {
-      return res.json(
-        createSuccessResponse(
-          { cards: result.cards, count: result.cards.length, isReused: true },
-          result.message
-        )
-      );
-    }
-
     // Save generated cards to database
     const savedCards = [];
-    for (const generatedCard of result.cards) {
-      if (!generatedCard.isReused) {
-        const card = await prisma.card.create({
-          data: {
-            subtopicId,
-            front: generatedCard.front,
-            back: generatedCard.back,
-            createdBy: userId,
-          },
-          include: {
-            subtopic: {
-              include: {
-                topic: true,
-              },
+    for (const generatedCard of generatedCards) {
+      const card = await prisma.card.create({
+        data: {
+          subtopicId,
+          front: generatedCard.front,
+          back: generatedCard.back,
+          difficulty: 'medium', // Default difficulty
+          createdBy: userId,
+        },
+        include: {
+          subtopic: {
+            include: {
+              topic: true,
             },
           },
-        });
-        savedCards.push(card);
-      }
+        },
+      });
+      savedCards.push(card);
     }
 
     res.status(201).json(
       createSuccessResponse(
-        { 
-          cards: savedCards, 
-          count: savedCards.length,
-          isReused: false,
-          priorityData: result.priorityData
-        },
-        result.message
+        { cards: savedCards, count: savedCards.length },
+        `${savedCards.length} cards gerados com sucesso`
       )
     );
   } catch (error) {
@@ -346,35 +337,165 @@ export const generateCards = async (req: AuthenticatedRequest, res: Response) =>
   }
 };
 
-export const bulkDeleteCards = async (req: AuthenticatedRequest, res: Response) => {
+export const bulkGenerateCards = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-    const { cardIds } = req.body;
+    const { contestId, topicIds = [], subtopicIds = [] } = req.body;
 
-    if (!cardIds || !Array.isArray(cardIds) || cardIds.length === 0) {
+    // Validate input
+    if (!contestId) {
       return res.status(400).json(
-        createErrorResponse('Lista de IDs de cards é obrigatória')
+        createErrorResponse('ID do concurso é obrigatório')
       );
     }
 
-    // Delete cards that belong to the user
-    const result = await prisma.card.deleteMany({
-      where: {
-        id: { in: cardIds },
-        createdBy: userId,
+    // Get contest data
+    const contest = await prisma.contest.findFirst({
+      where: { id: contestId, userId },
+      include: {
+        contestTopics: {
+          include: {
+            topic: {
+              include: {
+                subtopics: true,
+              },
+            },
+          },
+        },
       },
     });
 
-    res.json(
+    if (!contest) {
+      return res.status(404).json(
+        createErrorResponse('Concurso não encontrado')
+      );
+    }
+
+    // Determine which subtopics to generate cards for
+    let targetSubtopics: any[] = [];
+
+    if (subtopicIds.length > 0) {
+      // Generate for specific subtopics
+      targetSubtopics = await prisma.subtopic.findMany({
+        where: {
+          id: { in: subtopicIds },
+        },
+        include: {
+          topic: true,
+        },
+      });
+    } else if (topicIds.length > 0) {
+      // Generate for all subtopics of specific topics
+      targetSubtopics = await prisma.subtopic.findMany({
+        where: {
+          topicId: { in: topicIds },
+        },
+        include: {
+          topic: true,
+        },
+      });
+    } else {
+      // Generate for all subtopics in the contest
+      targetSubtopics = contest.contestTopics.flatMap(ct => 
+        ct.topic.subtopics.map(st => ({
+          ...st,
+          topic: ct.topic,
+        }))
+      );
+    }
+
+    if (targetSubtopics.length === 0) {
+      return res.status(400).json(
+        createErrorResponse('Nenhum subtópico encontrado para gerar cards')
+      );
+    }
+
+    // Generate cards for each subtopic
+    const results = [];
+    let totalGenerated = 0;
+    let errors = [];
+
+    for (const subtopic of targetSubtopics) {
+      try {
+        // Check if cards already exist for this subtopic
+        const existingCards = await prisma.card.findMany({
+          where: { subtopicId: subtopic.id },
+        });
+
+        const cardsToGenerate = Math.max(0, 5 - existingCards.length); // Generate up to 5 cards per subtopic
+
+        if (cardsToGenerate > 0) {
+          const generatedCards = await generateCardsWithRetry({
+            subtopicName: subtopic.name,
+            topicName: subtopic.topic.name,
+            contestName: contest.name,
+            selectedOffice: contest.selectedOffice,
+            count: cardsToGenerate,
+          });
+
+          // Save generated cards
+          const savedCards = [];
+          for (const generatedCard of generatedCards) {
+            const card = await prisma.card.create({
+              data: {
+                subtopicId: subtopic.id,
+                front: generatedCard.front,
+                back: generatedCard.back,
+                difficulty: 'medium',
+                createdBy: userId,
+              },
+            });
+            savedCards.push(card);
+          }
+
+          results.push({
+            subtopicId: subtopic.id,
+            subtopicName: subtopic.name,
+            topicName: subtopic.topic.name,
+            generated: savedCards.length,
+            existing: existingCards.length,
+          });
+
+          totalGenerated += savedCards.length;
+        } else {
+          results.push({
+            subtopicId: subtopic.id,
+            subtopicName: subtopic.name,
+            topicName: subtopic.topic.name,
+            generated: 0,
+            existing: existingCards.length,
+            message: 'Subtópico já possui cards suficientes',
+          });
+        }
+      } catch (error) {
+        console.error(`Erro ao gerar cards para ${subtopic.name}:`, error);
+        errors.push({
+          subtopicId: subtopic.id,
+          subtopicName: subtopic.name,
+          error: error instanceof Error ? error.message : 'Erro desconhecido',
+        });
+      }
+    }
+
+    res.status(201).json(
       createSuccessResponse(
-        { deletedCount: result.count },
-        `${result.count} cards deletados com sucesso`
+        {
+          totalGenerated,
+          results,
+          errors,
+          summary: {
+            subtopicsProcessed: targetSubtopics.length,
+            successful: results.length,
+            failed: errors.length,
+          },
+        },
+        `Geração em lote concluída. ${totalGenerated} cards gerados no total.`
       )
     );
   } catch (error) {
-    console.error('Bulk delete cards error:', error);
+    console.error('Bulk generate cards error:', error);
     res.status(500).json(
-      createErrorResponse('Erro interno do servidor')
+      createErrorResponse('Erro ao gerar cards em lote')
     );
   }
 };

@@ -3,11 +3,82 @@ import { prisma } from '../utils/prisma';
 import { createSuccessResponse, createErrorResponse } from '../utils/response';
 import { AuthenticatedRequest } from '../middleware/auth';
 
-export const getTopics = async (req: Request, res: Response) => {
+export const createTopic = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const topics = await prisma.topic.findMany({
+    const { name, description } = req.body;
+
+    // Validate input
+    if (!name) {
+      return res.status(400).json(
+        createErrorResponse('Nome do tópico é obrigatório')
+      );
+    }
+
+    // Check if topic already exists
+    const existingTopic = await prisma.topic.findUnique({
+      where: { name },
+    });
+
+    if (existingTopic) {
+      return res.status(409).json(
+        createErrorResponse('Tópico com este nome já existe')
+      );
+    }
+
+    // Create topic
+    const topic = await prisma.topic.create({
+      data: {
+        name,
+        description,
+      },
       include: {
         subtopics: true,
+        _count: {
+          select: {
+            subtopics: true,
+            contestTopics: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json(
+      createSuccessResponse(topic, 'Tópico criado com sucesso')
+    );
+  } catch (error) {
+    console.error('Create topic error:', error);
+    res.status(500).json(
+      createErrorResponse('Erro interno do servidor')
+    );
+  }
+};
+
+export const getTopics = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { contestId } = req.query;
+
+    let whereClause: any = {};
+    
+    if (contestId) {
+      whereClause.contestTopics = {
+        some: {
+          contestId: contestId as string,
+        },
+      };
+    }
+
+    const topics = await prisma.topic.findMany({
+      where: whereClause,
+      include: {
+        subtopics: {
+          include: {
+            _count: {
+              select: {
+                cards: true,
+              },
+            },
+          },
+        },
         _count: {
           select: {
             subtopics: true,
@@ -29,7 +100,7 @@ export const getTopics = async (req: Request, res: Response) => {
   }
 };
 
-export const getTopic = async (req: Request, res: Response) => {
+export const getTopic = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -47,6 +118,21 @@ export const getTopic = async (req: Request, res: Response) => {
                     email: true,
                   },
                 },
+              },
+            },
+            _count: {
+              select: {
+                cards: true,
+              },
+            },
+          },
+        },
+        contestTopics: {
+          include: {
+            contest: {
+              select: {
+                id: true,
+                name: true,
               },
             },
           },
@@ -77,52 +163,10 @@ export const getTopic = async (req: Request, res: Response) => {
   }
 };
 
-export const createTopic = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { name, description, priority } = req.body; // Adicionado priority
-
-    // Validate input
-    if (!name) {
-      return res.status(400).json(
-        createErrorResponse('Nome do tópico é obrigatório')
-      );
-    }
-
-    // Check if topic already exists
-    const existingTopic = await prisma.topic.findUnique({
-      where: { name },
-    });
-
-    if (existingTopic) {
-      return res.status(400).json(
-        createErrorResponse('Tópico já existe com este nome')
-      );
-    }
-
-    // Create topic
-    const topic = await prisma.topic.create({
-      data: {
-        name,
-        description,
-        priority, // Adicionado priority
-      },
-    });
-
-    res.status(201).json(
-      createSuccessResponse(topic, 'Tópico criado com sucesso')
-    );
-  } catch (error) {
-    console.error('Create topic error:', error);
-    res.status(500).json(
-      createErrorResponse('Erro interno do servidor')
-    );
-  }
-};
-
 export const updateTopic = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, priority } = req.body; // Adicionado priority
+    const { name, description } = req.body;
 
     // Check if topic exists
     const existingTopic = await prisma.topic.findUnique({
@@ -135,13 +179,31 @@ export const updateTopic = async (req: AuthenticatedRequest, res: Response) => {
       );
     }
 
+    // Check if new name conflicts with existing topic
+    if (name && name !== existingTopic.name) {
+      const conflictingTopic = await prisma.topic.findUnique({
+        where: { name },
+      });
+
+      if (conflictingTopic) {
+        return res.status(409).json(
+          createErrorResponse('Tópico com este nome já existe')
+        );
+      }
+    }
+
     // Update topic
     const topic = await prisma.topic.update({
       where: { id },
-      data: {
-        name,
-        description,
-        priority, // Adicionado priority
+      data: { name, description },
+      include: {
+        subtopics: true,
+        _count: {
+          select: {
+            subtopics: true,
+            contestTopics: true,
+          },
+        },
       },
     });
 
@@ -163,6 +225,14 @@ export const deleteTopic = async (req: AuthenticatedRequest, res: Response) => {
     // Check if topic exists
     const existingTopic = await prisma.topic.findUnique({
       where: { id },
+      include: {
+        _count: {
+          select: {
+            subtopics: true,
+            contestTopics: true,
+          },
+        },
+      },
     });
 
     if (!existingTopic) {
@@ -171,7 +241,14 @@ export const deleteTopic = async (req: AuthenticatedRequest, res: Response) => {
       );
     }
 
-    // Delete topic (cascade will handle related records)
+    // Check if topic is being used in contests
+    if (existingTopic._count.contestTopics > 0) {
+      return res.status(400).json(
+        createErrorResponse('Não é possível deletar tópico que está sendo usado em concursos')
+      );
+    }
+
+    // Delete topic (cascade will handle subtopics and cards)
     await prisma.topic.delete({
       where: { id },
     });
@@ -187,97 +264,26 @@ export const deleteTopic = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getSubtopics = async (req: Request, res: Response) => {
-  try {
-    const { topicId } = req.query;
-
-    const whereClause: any = {};
-    if (topicId) {
-      whereClause.topicId = topicId as string;
-    }
-
-    const subtopics = await prisma.subtopic.findMany({
-      where: whereClause,
-      include: {
-        topic: true,
-        _count: {
-          select: {
-            cards: true,
-          },
-        },
-      },
-      orderBy: { name: 'asc' },
-    });
-
-    res.json(
-      createSuccessResponse(subtopics, 'Subtópicos recuperados com sucesso')
-    );
-  } catch (error) {
-    console.error('Get subtopics error:', error);
-    res.status(500).json(
-      createErrorResponse('Erro interno do servidor')
-    );
-  }
-};
-
-export const getSubtopic = async (req: Request, res: Response) => {
+export const getTopicStats = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userId = req.user!.userId;
 
-    const subtopic = await prisma.subtopic.findUnique({
+    const topic = await prisma.topic.findUnique({
       where: { id },
       include: {
-        topic: true,
-        cards: {
+        subtopics: {
           include: {
-            creator: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
+            cards: {
+              include: {
+                userCards: {
+                  where: { userId },
+                },
               },
             },
           },
         },
-        _count: {
-          select: {
-            cards: true,
-          },
-        },
       },
-    });
-
-    if (!subtopic) {
-      return res.status(404).json(
-        createErrorResponse('Subtópico não encontrado')
-      );
-    }
-
-    res.json(
-      createSuccessResponse(subtopic, 'Subtópico recuperado com sucesso')
-    );
-  } catch (error) {
-    console.error('Get subtopic error:', error);
-    res.status(500).json(
-      createErrorResponse('Erro interno do servidor')
-    );
-  }
-};
-
-export const createSubtopic = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { topicId, name, description, priority, estimatedCards } = req.body; // Adicionado priority e estimatedCards
-
-    // Validate input
-    if (!topicId || !name) {
-      return res.status(400).json(
-        createErrorResponse('ID do tópico e nome do subtópico são obrigatórios')
-      );
-    }
-
-    // Check if topic exists
-    const topic = await prisma.topic.findUnique({
-      where: { id: topicId },
     });
 
     if (!topic) {
@@ -286,97 +292,60 @@ export const createSubtopic = async (req: AuthenticatedRequest, res: Response) =
       );
     }
 
-    // Create subtopic
-    const subtopic = await prisma.subtopic.create({
-      data: {
-        topicId,
-        name,
-        description,
-        priority, // Adicionado priority
-        estimatedCards, // Adicionado estimatedCards
-      },
-      include: {
-        topic: true,
-      },
-    });
+    // Calculate statistics
+    let totalCards = 0;
+    let studiedCards = 0;
+    let correctAnswers = 0;
+    let incorrectAnswers = 0;
 
-    res.status(201).json(
-      createSuccessResponse(subtopic, 'Subtópico criado com sucesso')
-    );
-  } catch (error) {
-    console.error('Create subtopic error:', error);
-    res.status(500).json(
-      createErrorResponse('Erro interno do servidor')
-    );
-  }
-};
-
-export const updateSubtopic = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { name, description, priority, estimatedCards } = req.body; // Adicionado priority e estimatedCards
-
-    // Check if subtopic exists
-    const existingSubtopic = await prisma.subtopic.findUnique({
-      where: { id },
-    });
-
-    if (!existingSubtopic) {
-      return res.status(404).json(
-        createErrorResponse('Subtópico não encontrado')
+    const subtopicStats = topic.subtopics.map(subtopic => {
+      const subtopicTotalCards = subtopic.cards.length;
+      const subtopicStudiedCards = subtopic.cards.filter(card => 
+        card.userCards.some(uc => uc.totalCorrectReviews > 0 || uc.totalIncorrectReviews > 0)
+      ).length;
+      const subtopicCorrect = subtopic.cards.reduce((sum, card) => 
+        sum + card.userCards.reduce((cardSum, uc) => cardSum + uc.totalCorrectReviews, 0), 0
       );
-    }
+      const subtopicIncorrect = subtopic.cards.reduce((sum, card) => 
+        sum + card.userCards.reduce((cardSum, uc) => cardSum + uc.totalIncorrectReviews, 0), 0
+      );
 
-    // Update subtopic
-    const subtopic = await prisma.subtopic.update({
-      where: { id },
-      data: {
-        name,
-        description,
-        priority, // Adicionado priority
-        estimatedCards, // Adicionado estimatedCards
-      },
-      include: {
-        topic: true,
-      },
+      totalCards += subtopicTotalCards;
+      studiedCards += subtopicStudiedCards;
+      correctAnswers += subtopicCorrect;
+      incorrectAnswers += subtopicIncorrect;
+
+      return {
+        subtopicId: subtopic.id,
+        subtopicName: subtopic.name,
+        totalCards: subtopicTotalCards,
+        studiedCards: subtopicStudiedCards,
+        correctAnswers: subtopicCorrect,
+        incorrectAnswers: subtopicIncorrect,
+        accuracy: subtopicCorrect + subtopicIncorrect > 0 
+          ? (subtopicCorrect / (subtopicCorrect + subtopicIncorrect)) * 100 
+          : 0,
+      };
     });
+
+    const stats = {
+      topicId: topic.id,
+      topicName: topic.name,
+      totalCards,
+      studiedCards,
+      correctAnswers,
+      incorrectAnswers,
+      accuracy: correctAnswers + incorrectAnswers > 0 
+        ? (correctAnswers / (correctAnswers + incorrectAnswers)) * 100 
+        : 0,
+      subtopicStats,
+    };
 
     res.json(
-      createSuccessResponse(subtopic, 'Subtópico atualizado com sucesso')
+      createSuccessResponse(stats, 'Estatísticas do tópico recuperadas com sucesso')
     );
   } catch (error) {
-    console.error('Update subtopic error:', error);
-    res.status(500).json(
-      createErrorResponse('Erro interno do servidor')
-    );
-  }
-};
-
-export const deleteSubtopic = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    // Check if subtopic exists
-    const existingSubtopic = await prisma.subtopic.findUnique({
-      where: { id },
-    });
-
-    if (!existingSubtopic) {
-      return res.status(404).json(
-        createErrorResponse('Subtópico não encontrado')
-      );
-    }
-
-    // Delete subtopic (cascade will handle related records)
-    await prisma.subtopic.delete({
-      where: { id },
-    });
-
-    res.json(
-      createSuccessResponse(null, 'Subtópico deletado com sucesso')
-    );
-  } catch (error) {
-    console.error('Delete subtopic error:', error);
+    console.error('Get topic stats error:', error);
     res.status(500).json(
       createErrorResponse('Erro interno do servidor')
     );

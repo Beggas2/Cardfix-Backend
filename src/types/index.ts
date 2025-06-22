@@ -13,7 +13,7 @@ export interface Contest {
   name: string;
   description?: string;
   editalFileId?: string;
-  parsedEditalData?: string; // Alterado de 'any' para 'string'
+  parsedEditalData?: any;
   processingError?: string;
   isProcessing: boolean;
   targetDate?: Date;
@@ -28,7 +28,6 @@ export interface Topic {
   id: string;
   name: string;
   description?: string;
-  priority?: number; // Adicionado
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,8 +37,6 @@ export interface Subtopic {
   topicId: string;
   name: string;
   description?: string;
-  priority?: number; // Adicionado
-  estimatedCards?: number; // Adicionado
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +46,7 @@ export interface Card {
   subtopicId: string;
   front: string;
   back: string;
+  difficulty: 'easy' | 'medium' | 'hard';
   createdBy: string;
   repetitions: number;
   easeFactor: number;
@@ -83,7 +81,6 @@ export interface ContestTopic {
   contestId: string;
   topicId: string;
   userId: string;
-  priority?: number; // Adicionado
   createdAt: Date;
   updatedAt: Date;
 }
@@ -112,6 +109,7 @@ export interface CreateCardRequest {
   subtopicId: string;
   front: string;
   back: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
 }
 
 export interface ReviewCardRequest {
@@ -123,6 +121,22 @@ export interface GenerateCardsRequest {
   subtopicId: string;
   contestId: string;
   count?: number;
+}
+
+export interface BulkGenerateCardsRequest {
+  contestId: string;
+  topicIds?: string[];
+  subtopicIds?: string[];
+}
+
+export interface ProcessingStatus {
+  contestId: string;
+  contestName: string;
+  hasEdital: boolean;
+  isProcessing: boolean;
+  processingError?: string;
+  isProcessed: boolean;
+  parsedData?: any;
 }
 
 // API Response wrapper
@@ -149,4 +163,33 @@ export interface FileUploadResponse {
   url?: string;
 }
 
+// Performance tracking
+export interface PerformanceStats {
+  totalCards: number;
+  studiedCards: number;
+  correctAnswers: number;
+  incorrectAnswers: number;
+  averageAccuracy: number;
+  studyStreak: number;
+  topicPerformance: TopicPerformance[];
+}
+
+export interface TopicPerformance {
+  topicId: string;
+  topicName: string;
+  totalCards: number;
+  studiedCards: number;
+  accuracy: number;
+  averageInterval: number;
+  subtopicPerformance: SubtopicPerformance[];
+}
+
+export interface SubtopicPerformance {
+  subtopicId: string;
+  subtopicName: string;
+  totalCards: number;
+  studiedCards: number;
+  accuracy: number;
+  averageInterval: number;
+}
 

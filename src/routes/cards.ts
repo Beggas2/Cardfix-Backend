@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth';
 import {
   createCard,
   getCards,
@@ -7,25 +6,25 @@ import {
   updateCard,
   deleteCard,
   generateCards,
-  bulkDeleteCards,
+  bulkGenerateCards,
 } from '../controllers/cardController';
+import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticateToken);
 
-// Card routes
+// Card CRUD
 router.post('/', createCard);
 router.get('/', getCards);
 router.get('/:id', getCard);
 router.put('/:id', updateCard);
 router.delete('/:id', deleteCard);
 
-// Bulk operations
-router.delete('/bulk/delete', bulkDeleteCards);
-
-// AI generation
+// AI card generation
 router.post('/generate', generateCards);
+router.post('/bulk-generate', bulkGenerateCards);
 
 export default router;
+

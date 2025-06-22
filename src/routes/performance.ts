@@ -1,36 +1,24 @@
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth';
 import {
-  getContestPerformance,
-  getTopicPerformance,
-  getSubtopicPerformance,
   getOverallPerformance,
-  getPerformanceComparison,
-  getStudyInsights
+  getTopicPerformance,
+  getStudyProgress,
+  getUpcomingReviews,
+  getContestComparison,
 } from '../controllers/performanceController';
+import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticateToken);
 
-// Get overall performance across all contests
+// Performance endpoints
 router.get('/overall', getOverallPerformance);
-
-// Get performance for a specific contest
-router.get('/contest/:contestId', getContestPerformance);
-
-// Get performance for a specific topic
-router.get('/topic/:topicId', getTopicPerformance);
-
-// Get performance for a specific subtopic
-router.get('/subtopic/:subtopicId', getSubtopicPerformance);
-
-// Compare performance across multiple contests
-router.post('/compare', getPerformanceComparison);
-
-// Get study insights and recommendations
-router.get('/insights', getStudyInsights);
+router.get('/topics', getTopicPerformance);
+router.get('/progress', getStudyProgress);
+router.get('/upcoming-reviews', getUpcomingReviews);
+router.get('/contest-comparison', getContestComparison);
 
 export default router;
 

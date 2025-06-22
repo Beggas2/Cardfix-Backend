@@ -1,38 +1,28 @@
 import { Router } from 'express';
 import {
+  createTopic,
   getTopics,
   getTopic,
-  createTopic,
   updateTopic,
   deleteTopic,
-  getSubtopics,
-  getSubtopic,
-  createSubtopic,
-  updateSubtopic,
-  deleteSubtopic,
+  getTopicStats,
 } from '../controllers/topicController';
 import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
 
-// Public routes (read-only)
-router.get('/topics', getTopics);
-router.get('/topics/:id', getTopic);
-router.get('/subtopics', getSubtopics);
-router.get('/subtopics/:id', getSubtopic);
-
-// Protected routes (require authentication)
+// All routes require authentication
 router.use(authenticateToken);
 
-// Topic management
-router.post('/topics', createTopic);
-router.put('/topics/:id', updateTopic);
-router.delete('/topics/:id', deleteTopic);
+// Topic CRUD
+router.post('/', createTopic);
+router.get('/', getTopics);
+router.get('/:id', getTopic);
+router.put('/:id', updateTopic);
+router.delete('/:id', deleteTopic);
 
-// Subtopic management
-router.post('/subtopics', createSubtopic);
-router.put('/subtopics/:id', updateSubtopic);
-router.delete('/subtopics/:id', deleteSubtopic);
+// Topic statistics
+router.get('/:id/stats', getTopicStats);
 
 export default router;
 

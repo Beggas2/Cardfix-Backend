@@ -22,8 +22,8 @@ export const createContest = async (req: AuthenticatedRequest, res: Response) =>
         userId,
         name,
         description,
-        targetDate: targetDate ? new Date(targetDate) : undefined,
-        examDate: examDate ? new Date(examDate) : undefined, // Corrigido para aceitar undefined
+        targetDate: targetDate ? new Date(targetDate).toISOString() : undefined,
+        examDate: examDate ? new Date(examDate).toISOString() : undefined,
         selectedOffice,
       },
     });
@@ -156,8 +156,8 @@ export const updateContest = async (req: AuthenticatedRequest, res: Response) =>
       data: {
         name,
         description,
-        targetDate: targetDate ? new Date(targetDate) : undefined,
-        examDate: examDate ? new Date(examDate) : undefined, // Corrigido para aceitar undefined
+        targetDate: targetDate ? new Date(targetDate).toISOString() : undefined,
+        examDate: examDate ? new Date(examDate).toISOString() : undefined,
         selectedOffice,
       },
     });
@@ -305,4 +305,5 @@ export const removeTopicFromContest = async (req: AuthenticatedRequest, res: Res
     );
   }
 };
+
 
