@@ -108,9 +108,9 @@ export const processEdital = async (req: AuthenticatedRequest, res: Response) =>
       const processedData = await PDFProcessingService.processEditalWithAI(
         pdfData.text,
         {
-          institution: contest.institution || undefined,
-          position: contest.position || undefined,
-          examDate: contest.examDate?.toISOString() || undefined,
+          institution: contest.name.split(' ')[0] || undefined, // Extrair instituição do nome do concurso
+          position: contest.selectedOffice || undefined,
+          examDate: contest.examDate ? contest.examDate.toISOString() : undefined,
         }
       );
 
@@ -137,13 +137,13 @@ export const processEdital = async (req: AuthenticatedRequest, res: Response) =>
             },
           },
           update: {
-            priority: topicData.priority,
+            priority: topicData.priority, // Adicionado 'priority'
           },
           create: {
             contestId,
             topicId: topic.id,
             userId,
-            priority: topicData.priority,
+            priority: topicData.priority, // Adicionado 'priority'
           },
         });
 
@@ -180,9 +180,9 @@ export const processEdital = async (req: AuthenticatedRequest, res: Response) =>
           isProcessing: false,
           processingError: null,
           // Update contest info if extracted from PDF
-          institution: processedData.contestInfo.institution || contest.institution,
-          position: processedData.contestInfo.position || contest.position,
-          examDate: processedData.contestInfo.examDate 
+          institution: processedData.contestInfo?.institution || contest.name.split(' ')[0],
+          position: processedData.contestInfo?.position || contest.selectedOffice,
+          examDate: processedData.contestInfo?.examDate 
             ? new Date(processedData.contestInfo.examDate) 
             : contest.examDate,
         },

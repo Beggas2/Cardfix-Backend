@@ -21,6 +21,7 @@ interface CardGenerationResult {
   back: string;
   difficulty: 'easy' | 'medium' | 'hard';
   priority: number;
+  isReused?: boolean; // Adicionado para resolver o erro
 }
 
 interface SubtopicPriorityData {
@@ -301,7 +302,8 @@ Gere os cards agora:`;
         front: `Conceito ${i} de ${subtopicName}`,
         back: `Definição e aplicação prática do conceito ${i} relacionado a ${subtopicName} no contexto de ${topicName}.`,
         difficulty: i <= 2 ? 'easy' : i <= 4 ? 'medium' : 'hard',
-        priority: Math.ceil(Math.random() * 10)
+        priority: Math.ceil(Math.random() * 10),
+        isReused: false // Fallback cards are never reused
       });
     }
 
@@ -326,7 +328,8 @@ Gere os cards agora:`;
         return {
           cards: existingResult.cards,
           message: 'Cards reutilizados da base de conhecimento',
-          isReused: true
+          isReused: true,
+          priorityData: null // No new priority data for reused cards
         };
       }
 
@@ -377,4 +380,5 @@ export const generateCardsWithRetry = async (params: GenerateCardsParams): Promi
 };
 
 export const advancedAIService = new AdvancedAIService();
+
 

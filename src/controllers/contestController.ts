@@ -23,7 +23,7 @@ export const createContest = async (req: AuthenticatedRequest, res: Response) =>
         name,
         description,
         targetDate: targetDate ? new Date(targetDate) : undefined,
-        examDate,
+        examDate: examDate ? new Date(examDate) : undefined, // Corrigido para aceitar undefined
         selectedOffice,
       },
     });
@@ -157,7 +157,7 @@ export const updateContest = async (req: AuthenticatedRequest, res: Response) =>
         name,
         description,
         targetDate: targetDate ? new Date(targetDate) : undefined,
-        examDate,
+        examDate: examDate ? new Date(examDate) : undefined, // Corrigido para aceitar undefined
         selectedOffice,
       },
     });

@@ -79,7 +79,7 @@ export const getTopic = async (req: Request, res: Response) => {
 
 export const createTopic = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, priority } = req.body; // Adicionado priority
 
     // Validate input
     if (!name) {
@@ -104,6 +104,7 @@ export const createTopic = async (req: AuthenticatedRequest, res: Response) => {
       data: {
         name,
         description,
+        priority, // Adicionado priority
       },
     });
 
@@ -121,7 +122,7 @@ export const createTopic = async (req: AuthenticatedRequest, res: Response) => {
 export const updateTopic = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description, priority } = req.body; // Adicionado priority
 
     // Check if topic exists
     const existingTopic = await prisma.topic.findUnique({
@@ -140,6 +141,7 @@ export const updateTopic = async (req: AuthenticatedRequest, res: Response) => {
       data: {
         name,
         description,
+        priority, // Adicionado priority
       },
     });
 
@@ -264,7 +266,7 @@ export const getSubtopic = async (req: Request, res: Response) => {
 
 export const createSubtopic = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { topicId, name, description } = req.body;
+    const { topicId, name, description, priority, estimatedCards } = req.body; // Adicionado priority e estimatedCards
 
     // Validate input
     if (!topicId || !name) {
@@ -290,6 +292,8 @@ export const createSubtopic = async (req: AuthenticatedRequest, res: Response) =
         topicId,
         name,
         description,
+        priority, // Adicionado priority
+        estimatedCards, // Adicionado estimatedCards
       },
       include: {
         topic: true,
@@ -310,7 +314,7 @@ export const createSubtopic = async (req: AuthenticatedRequest, res: Response) =
 export const updateSubtopic = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description, priority, estimatedCards } = req.body; // Adicionado priority e estimatedCards
 
     // Check if subtopic exists
     const existingSubtopic = await prisma.subtopic.findUnique({
@@ -329,6 +333,8 @@ export const updateSubtopic = async (req: AuthenticatedRequest, res: Response) =
       data: {
         name,
         description,
+        priority, // Adicionado priority
+        estimatedCards, // Adicionado estimatedCards
       },
       include: {
         topic: true,

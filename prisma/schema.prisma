@@ -56,6 +56,7 @@ model Topic {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
+  priority    Int?     // Adicionado
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -67,12 +68,14 @@ model Topic {
 }
 
 model Subtopic {
-  id          String   @id @default(cuid())
-  topicId     String
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(cuid())
+  topicId        String
+  name           String
+  description    String?
+  priority       Int?     // Adicionado
+  estimatedCards Int?     // Adicionado
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // Relations
   topic     Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
@@ -138,6 +141,7 @@ model ContestTopic {
   contestId String
   topicId   String
   userId    String
+  priority  Int?     // Adicionado
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -149,4 +153,5 @@ model ContestTopic {
   @@unique([contestId, topicId])
   @@map("contest_topics")
 }
+
 

@@ -13,7 +13,7 @@ export interface Contest {
   name: string;
   description?: string;
   editalFileId?: string;
-  parsedEditalData?: any;
+  parsedEditalData?: string; // Alterado de 'any' para 'string'
   processingError?: string;
   isProcessing: boolean;
   targetDate?: Date;
@@ -28,6 +28,7 @@ export interface Topic {
   id: string;
   name: string;
   description?: string;
+  priority?: number; // Adicionado
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +38,8 @@ export interface Subtopic {
   topicId: string;
   name: string;
   description?: string;
+  priority?: number; // Adicionado
+  estimatedCards?: number; // Adicionado
   createdAt: Date;
   updatedAt: Date;
 }
@@ -80,6 +83,7 @@ export interface ContestTopic {
   contestId: string;
   topicId: string;
   userId: string;
+  priority?: number; // Adicionado
   createdAt: Date;
   updatedAt: Date;
 }
@@ -144,4 +148,5 @@ export interface FileUploadResponse {
   mimetype: string;
   url?: string;
 }
+
 
